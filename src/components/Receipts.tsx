@@ -1,158 +1,251 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, Pencil, Trash2 } from "lucide-react";
+import { UserReceipt } from "@/types/receipt";
+import { useCategoriesAndIngredients } from "@/hooks/useCategoriesAndIngredients";
+import ErrorDialog from "./ui/ErrorDialog";
+import { useAuth } from "@/contexts/AuthContext";
+import supabase from "@/api/supabase";
+import { useReceipts } from "@/hooks/use-receipts";
+import LoadingSpinner from "./ui/loading-spinner";
+import { useToast } from "@/hooks/use-toast";
 
-type Receipt = {
-  id: string;
-  name: string;
-  pricePerKg: number;
-  fedKg: number;
-  fedPercent: number;
-  price: number;
-  ingredients: ReceiptIngredient[];
-};
+// type Receipt = {
+//   id: string;
+//   name: string;
+//   pricePerKg: number;
+//   fedKg: number;
+//   fedPercent: number;
+//   price: number;
+//   ingredients: ReceiptIngredient[];
+// };
 
-type ReceiptIngredient = {
-  id: string;
-  name: string;
-  quantity: number;
-};
+// type ReceiptIngredient = {
+//   id: string;
+//   name: string;
+//   quantity: number;
+// };
 
-const initialReceipts: Receipt[] = [
-  {
-    id: '1',
-    name: 'Dairy Cow Mix',
-    pricePerKg: 3.2,
-    fedKg: 12,
-    fedPercent: 100,
-    price: 38.4,
-    ingredients: [
-      { id: '1', name: 'Corn', quantity: 6 },
-      { id: '2', name: 'Soybean Meal', quantity: 4 },
-    ]
-  },
-  {
-    id: '2',
-    name: 'Goat Feed',
-    pricePerKg: 2.8,
-    fedKg: 5,
-    fedPercent: 100,
-    price: 14,
-    ingredients: [
-      { id: '1', name: 'Corn', quantity: 3 },
-      { id: '2', name: 'Soybean Meal', quantity: 1.5 },
-    ]
-  }
-];
-
-const availableIngredients = [
-  { id: '1', name: 'Corn' },
-  { id: '2', name: 'Soybean Meal' },
-  { id: '3', name: 'Wheat Bran' },
-  { id: '4', name: 'Alfalfa' },
-];
+// const initialReceipts: Partial<UserReceipt>[] = [
+//   {
+//     id: "1",
+//     user_id: "F38jUkFc6lXkttiWQVKVsjEeIFI2",
+//     name: "Dairy Cow Mix",
+//     ingredients: [
+//       {
+//         ingredient_id: 1,
+//         ingredient_category_id: 2,
+//         Name: "Corn",
+//         price_per_kilos: 3200,
+//         kilos: 67,
+//         create_at: new Date(),
+//         update_at: new Date(),
+//       },
+//       {
+//         ingredient_id: 2,
+//         ingredient_category_id: 1,
+//         Name: "Bekatul",
+//         price_per_kilos: 5000,
+//         kilos: 12,
+//         create_at: new Date(),
+//         update_at: new Date(),
+//       },
+//     ],
+//   },
+// ];
 
 const Receipts = () => {
-  const [receipts, setReceipts] = useState<Receipt[]>(initialReceipts);
+  const { categories, ingredients } = useCategoriesAndIngredients();
+  const { currentUser } = useAuth();
+  const [errorDialogOpen, setErrorDialogOpen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [currentReceipt, setCurrentReceipt] = useState<Receipt | null>(null);
-  const [currentIngredient, setCurrentIngredient] = useState<ReceiptIngredient | null>(null);
+  const [currentReceipt, setCurrentReceipt] = useState<UserReceipt | null>(
+    null
+  );
+  const { toast } = useToast();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<UserReceipt | null>(null);
+  const [currentIngredient, setCurrentIngredient] = useState<any>(null);
   const [isIngredientDialogOpen, setIsIngredientDialogOpen] = useState(false);
+
+  // Helper to show error
+  const showError = (msg: string) => {
+    setErrorMessage(msg);
+    setErrorDialogOpen(true);
+  };
+
+  // Fetch receipts for the current user
+  const { receipts, setReceipts, loading } = useReceipts(
+    currentUser,
+    ingredients,
+    showError
+  );
+
+  if (loading) return <LoadingSpinner message="Loading receipts..." />;
 
   const handleAddNew = () => {
     setCurrentReceipt({
       id: Date.now().toString(),
-      name: '',
-      pricePerKg: 0,
-      fedKg: 0,
-      fedPercent: 100,
-      price: 0,
-      ingredients: []
+      user_id: currentUser.uid, // set as needed
+      receipt_name: "",
+      ingredients: [],
     });
     setIsDialogOpen(true);
   };
 
-  const handleEdit = (receipt: Receipt) => {
-    setCurrentReceipt({...receipt});
+  const confirmDelete = (receipt: UserReceipt) => {
+    setToDelete(receipt);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleEdit = (receipt: UserReceipt) => {
+    setCurrentReceipt({ ...receipt, ingredients: [...receipt.ingredients] });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    setReceipts(receipts.filter(r => r.id !== id));
-  };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!currentReceipt) return;
-    
-    // Calculate price based on fed kg and price per kg
-    const updatedReceipt = {
-      ...currentReceipt,
-      price: currentReceipt.pricePerKg * currentReceipt.fedKg
-    };
-    
-    if (receipts.some(r => r.id === updatedReceipt.id)) {
-      setReceipts(receipts.map(r => 
-        r.id === updatedReceipt.id ? updatedReceipt : r
-      ));
+    if (receipts.some((r) => r.id === currentReceipt.id)) {
+      setReceipts(
+        receipts.map((r) => (r.id === currentReceipt.id ? currentReceipt : r))
+      );
     } else {
-      setReceipts([...receipts, updatedReceipt]);
+      setReceipts([...receipts, currentReceipt]);
     }
-    
+
+    // Insert to user_receipts
+    const { data: receipt, error } = await supabase
+      .from("user_receipts")
+      .insert([
+        {
+          user_id: currentReceipt.user_id,
+          receipt_name: currentReceipt.receipt_name,
+        },
+      ])
+      .select()
+      .single();
+    if (error) {
+      showError("Error add receipt: " + error.message);
+    }
+
+    // Insert details
+    const details = currentReceipt.ingredients.map((ing) => ({
+      ingredient_id: ing.ingredient_id,
+      price_per_kilos: ing.price_per_kilos,
+      kilos: ing.kilos,
+      ingredient_category_id: ing.ingredient_category_id,
+      user_receipt_id: receipt.id,
+    }));
+    const { error: detailError } = await supabase
+      .from("user_receipts_detail")
+      .insert(details);
+    if (detailError) return showError(detailError.message);
+
+    toast({
+      title: 'Success',
+      description: 'You have successfully create new receipt: ' + currentReceipt.receipt_name,
+    });
+
     setIsDialogOpen(false);
   };
 
-  const handleInputChange = (field: keyof Receipt, value: string) => {
-    if (!currentReceipt) return;
-    
-    if (field === 'name') {
-      setCurrentReceipt({...currentReceipt, [field]: value});
+  const handleDeleteConfirmed = async () => {
+    if (!toDelete) return;
+    const { error } = await supabase
+      .from("user_receipts")
+      .delete()
+      .eq("id", toDelete.id);
+    if (error) {
+      showError("Error deleting receipt: " + error.message);
     } else {
-      setCurrentReceipt({...currentReceipt, [field]: parseFloat(value) || 0});
+      setReceipts(receipts.filter((r) => r.id !== toDelete.id));
     }
+    setDeleteDialogOpen(false);
+    setToDelete(null);
+  };
+
+  const handleInputChange = (field: keyof UserReceipt, value: string) => {
+    if (!currentReceipt) return;
+    setCurrentReceipt({ ...currentReceipt, [field]: value });
   };
 
   const handleAddIngredient = () => {
-    if (!currentReceipt) return;
-    
     setCurrentIngredient({
-      id: '',
-      name: '',
-      quantity: 0
+      ingredient_id: "",
+      Name: "",
+      price_per_kilos: 0,
+      kilos: 0,
+      create_at: new Date(),
+      update_at: new Date(),
     });
-    
     setIsIngredientDialogOpen(true);
   };
 
   const handleSaveIngredient = () => {
-    if (!currentReceipt || !currentIngredient || !currentIngredient.id) return;
-    
-    const selectedIngredient = availableIngredients.find(i => i.id === currentIngredient.id);
-    if (!selectedIngredient) return;
-    
-    const updatedIngredient = {
+    if (
+      !currentReceipt ||
+      !currentIngredient ||
+      !currentIngredient.ingredient_category_id ||
+      !currentIngredient.ingredient_id
+    ) {
+      <ErrorDialog
+        open={errorDialogOpen}
+        message="Data Not Found"
+        onClose={() => setErrorDialogOpen(false)}
+      />;
+      return;
+    }
+
+    // Ensure IDs are numbers
+    const ingredientToAdd = {
       ...currentIngredient,
-      name: selectedIngredient.name
+      ingredient_category_id: Number(currentIngredient.ingredient_category_id),
+      ingredient_id: Number(currentIngredient.ingredient_id),
+      create_at: new Date(),
+      update_at: new Date(),
     };
-    
+
     setCurrentReceipt({
       ...currentReceipt,
-      ingredients: [...currentReceipt.ingredients, updatedIngredient]
+      ingredients: [...currentReceipt.ingredients, ingredientToAdd],
     });
-    
     setIsIngredientDialogOpen(false);
+    setCurrentIngredient(null); // Reset after adding
   };
 
-  const handleRemoveIngredient = (ingredientId: string) => {
+  const handleRemoveIngredient = (ingredient_id: number) => {
     if (!currentReceipt) return;
-    
     setCurrentReceipt({
       ...currentReceipt,
-      ingredients: currentReceipt.ingredients.filter(i => i.id !== ingredientId)
+      ingredients: currentReceipt.ingredients.filter(
+        (i) => i.ingredient_id !== ingredient_id
+      ),
     });
   };
 
@@ -160,36 +253,78 @@ const Receipts = () => {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Receipts</h1>
-        <Button onClick={handleAddNew} className="bg-green-600 hover:bg-green-700">
+        <Button
+          onClick={handleAddNew}
+          className="bg-green-600 hover:bg-green-700"
+        >
           <Plus className="mr-2 h-4 w-4" /> Add Receipt
         </Button>
       </div>
-      
+
       <div className="border rounded-md">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Price per kg</TableHead>
-              <TableHead>Fed (kg)</TableHead>
-              <TableHead>Fed (%)</TableHead>
-              <TableHead>Price</TableHead>
+              <TableHead colSpan={3} className="p-0">
+                Details
+              </TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {receipts.map((receipt) => (
               <TableRow key={receipt.id}>
-                <TableCell className="font-medium">{receipt.name}</TableCell>
-                <TableCell>${receipt.pricePerKg.toFixed(2)}</TableCell>
-                <TableCell>{receipt.fedKg} kg</TableCell>
-                <TableCell>{receipt.fedPercent}%</TableCell>
-                <TableCell>${receipt.price.toFixed(2)}</TableCell>
-                <TableCell className="text-right">
-                  <Button variant="ghost" size="icon" onClick={() => handleEdit(receipt)}>
+                <TableCell className="font-medium">
+                  {receipt.receipt_name}
+                </TableCell>
+                <TableCell colSpan={4} className="p-0">
+                  <Table className="w-full border-none">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Price per kg</TableHead>
+                        <TableHead>Quantity (kg)</TableHead>
+                        <TableHead>Total Price</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {receipt.ingredients.map((ingredient) => (
+                        <TableRow key={ingredient.ingredient_id}>
+                          <TableCell>{ingredient.Name}</TableCell>
+                          <TableCell>
+                            {ingredient.price_per_kilos.toLocaleString(
+                              "id-ID",
+                              { style: "currency", currency: "IDR" }
+                            )}
+                          </TableCell>
+                          <TableCell>{ingredient.kilos}</TableCell>
+                          <TableCell>
+                            {(
+                              ingredient.price_per_kilos * ingredient.kilos
+                            ).toLocaleString("id-ID", {
+                              style: "currency",
+                              currency: "IDR",
+                            })}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableCell>
+                <TableCell className="text-right align-top">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleEdit(receipt)}
+                  >
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDelete(receipt.id)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => confirmDelete(receipt)}
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </TableCell>
@@ -203,9 +338,10 @@ const Receipts = () => {
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>
-              {currentReceipt && receipts.some(r => r.id === currentReceipt.id) 
-                ? 'Edit Receipt' 
-                : 'Add New Receipt'}
+              {currentReceipt &&
+              receipts.some((r) => r.id === currentReceipt.id)
+                ? "Edit Receipt"
+                : "Add New Receipt"}
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-4">
@@ -213,41 +349,20 @@ const Receipts = () => {
               <Label htmlFor="name">Name</Label>
               <Input
                 id="name"
-                value={currentReceipt?.name || ''}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="pricePerKg">Price per kg</Label>
-              <Input
-                id="pricePerKg"
-                type="number"
-                value={currentReceipt?.pricePerKg || 0}
-                onChange={(e) => handleInputChange('pricePerKg', e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="fedKg">Fed (kg)</Label>
-              <Input
-                id="fedKg"
-                type="number"
-                value={currentReceipt?.fedKg || 0}
-                onChange={(e) => handleInputChange('fedKg', e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="fedPercent">Fed (%)</Label>
-              <Input
-                id="fedPercent"
-                type="number"
-                value={currentReceipt?.fedPercent || 0}
-                onChange={(e) => handleInputChange('fedPercent', e.target.value)}
+                value={currentReceipt?.receipt_name || ""}
+                onChange={(e) =>
+                  handleInputChange("receipt_name", e.target.value)
+                }
               />
             </div>
             <div className="col-span-2">
               <div className="flex justify-between items-center mb-2">
                 <Label>Ingredients</Label>
-                <Button variant="outline" size="sm" onClick={handleAddIngredient}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddIngredient}
+                >
                   <Plus className="mr-1 h-3 w-3" /> Add
                 </Button>
               </div>
@@ -255,20 +370,24 @@ const Receipts = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
+                    <TableHead>Price per kg</TableHead>
                     <TableHead>Quantity (kg)</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {currentReceipt?.ingredients.map((ingredient) => (
-                    <TableRow key={ingredient.id}>
-                      <TableCell>{ingredient.name}</TableCell>
-                      <TableCell>{ingredient.quantity} kg</TableCell>
+                    <TableRow key={ingredient.ingredient_id}>
+                      <TableCell>{ingredient.Name}</TableCell>
+                      <TableCell>{ingredient.price_per_kilos}</TableCell>
+                      <TableCell>{ingredient.kilos}</TableCell>
                       <TableCell>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={() => handleRemoveIngredient(ingredient.id)}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            handleRemoveIngredient(ingredient.ingredient_id)
+                          }
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -280,51 +399,151 @@ const Receipts = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} className="bg-green-600 hover:bg-green-700">Save</Button>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              Save
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isIngredientDialogOpen} onOpenChange={setIsIngredientDialogOpen}>
+      <Dialog
+        open={isIngredientDialogOpen}
+        onOpenChange={setIsIngredientDialogOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Ingredient</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div>
-              <Label htmlFor="ingredient">Ingredient</Label>
-              <Select 
-                onValueChange={(value) => setCurrentIngredient({...currentIngredient!, id: value, name: ''})}
+              <Label htmlFor="category">Category</Label>
+              <Select
+                onValueChange={(value) =>
+                  setCurrentIngredient({
+                    ...currentIngredient,
+                    ingredient_category_id: value,
+                    ingredient_id: "", // reset ingredient when category changes
+                  })
+                }
+                value={currentIngredient?.ingredient_category_id || ""}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select ingredient" />
+                  <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableIngredients.map((ingredient) => (
-                    <SelectItem key={ingredient.id} value={ingredient.id}>
-                      {ingredient.name}
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label htmlFor="quantity">Quantity (kg)</Label>
+              <Label htmlFor="ingredient">Ingredient</Label>
+              <Select
+                onValueChange={(value) =>
+                  setCurrentIngredient({
+                    ...currentIngredient,
+                    ingredient_id: value,
+                    Name:
+                      ingredients.find((i) => i.ID === Number(value))?.Name ||
+                      "",
+                  })
+                }
+                value={currentIngredient?.ingredient_id || ""}
+                disabled={!currentIngredient?.ingredient_category_id}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select ingredient" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ingredients.map((ingredient) => (
+                    <SelectItem key={ingredient.ID} value={ingredient.ID}>
+                      {ingredient.Name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="price_per_kilos">Price per kg</Label>
               <Input
-                id="quantity"
+                id="price_per_kilos"
                 type="number"
-                value={currentIngredient?.quantity || 0}
-                onChange={(e) => setCurrentIngredient({...currentIngredient!, quantity: parseFloat(e.target.value) || 0})}
+                value={currentIngredient?.price_per_kilos || 0}
+                onChange={(e) =>
+                  setCurrentIngredient({
+                    ...currentIngredient,
+                    price_per_kilos: parseFloat(e.target.value) || 0,
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="kilos">Quantity (kg)</Label>
+              <Input
+                id="kilos"
+                type="number"
+                value={currentIngredient?.kilos || 0}
+                onChange={(e) =>
+                  setCurrentIngredient({
+                    ...currentIngredient,
+                    kilos: parseFloat(e.target.value) || 0,
+                  })
+                }
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsIngredientDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveIngredient} className="bg-green-600 hover:bg-green-700">Add</Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsIngredientDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveIngredient}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              Add
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Receipt</DialogTitle>
+          </DialogHeader>
+          <p>
+            Are you sure you want to delete <b>{toDelete?.receipt_name}</b>?
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConfirmed}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ErrorDialog
+        open={errorDialogOpen}
+        message={errorMessage}
+        onClose={() => setErrorDialogOpen(false)}
+      />
     </div>
   );
 };

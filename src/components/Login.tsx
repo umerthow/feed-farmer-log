@@ -18,11 +18,12 @@ const Login = () => {
         description: 'You have successfully signed in',
       });
     } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to sign in with Google',
-        variant: 'destructive',
-      });
+      // toast({
+      //   title: 'Error',
+      //   description: 'Failed to sign in with Google',
+      //   variant: 'destructive',
+      // });
+      console.error(error);
     } finally {
       setIsLoading(false);
     }

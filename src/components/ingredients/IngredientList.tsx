@@ -5,18 +5,32 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Button } from '../ui/button';
 import IngredientForm from './IngredientForm';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import ErrorDialog from '../ui/ErrorDialog';
+import LoadingSpinner from '../ui/loading-spinner';
+import { useToast } from '@/hooks/use-toast';
 
 const IngredientList = () => {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Ingredient | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<Ingredient | null>(null);
+  const [errorDialogOpen, setErrorDialogOpen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { toast } = useToast();
+  // Helper to show error
+  const showError = (msg: string) => {
+    setErrorMessage(msg);
+    setErrorDialogOpen(true);
+  };
 
   useEffect(() => {
     const fetchIngredients = async () => {
       const { data, error } = await supabase.from('ingredient').select('*');
       if (error) {
-        console.error('Error fetching ingredients:', error);
+        showError('Error fetching ingredients: ' + error.message);
       } else {
         setIngredients(data);
       }
@@ -35,14 +49,23 @@ const IngredientList = () => {
     setFormOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('ingredient').delete().eq('ID', id);
-    if (error) {
-      console.error('Error deleting ingredient:', error);
-    } else {
-      setIngredients(ingredients.filter(ingredient => ingredient.ID !== id));
-    }
+  const confirmDelete = (ingredient: Ingredient) => {
+    setToDelete(ingredient);
+    setDeleteDialogOpen(true);
   };
+
+  const handleDeleteConfirmed = async () => {
+    if (!toDelete) return;
+    const { error } = await supabase.from('ingredient').delete().eq('ID', toDelete.ID);
+    if (error) {
+      showError('Error deleting ingredient: ' + error.message);
+    } else {
+      setIngredients(ingredients.filter(ingredient => ingredient.ID !== toDelete.ID));
+    }
+    setDeleteDialogOpen(false);
+    setToDelete(null);
+  };
+
 
   const handleSave = async (ingredient: Ingredient) => {
     const { ID, ...data } = ingredient
@@ -53,7 +76,7 @@ const IngredientList = () => {
         .update({...data})
         .eq('ID', ingredient.ID);
       if (error) {
-        console.error('Error updating ingredient:', error);
+        showError('Error updating ingredient: ' + error.message);
         return;
       }
       setIngredients(ingredients.map(i => (i.ID === ingredient.ID ? ingredient : i)));
@@ -66,23 +89,23 @@ const IngredientList = () => {
         .select()
         .single();
       if (error) {
-        console.error('Error adding ingredient:', error);
+        showError('Error adding ingredient: ' + error.message);
         return;
       }
       setIngredients([...ingredients, data]);
     }
+    toast({
+      title: 'Success',
+      description: `Success crate new ${data.Name} ingredients`,
+      variant: 'default'
+    });
+
     setFormOpen(false);
+
+
   };
 
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center py-20">
-      <svg className="animate-spin h-8 w-8 text-green-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-      </svg>
-      <span className="text-green-700 font-semibold text-lg">Loading ingredients...</span>
-    </div>
-  );
+  if (loading) return <LoadingSpinner message="Loading ingredients..." />;
 
   return (
     <div className="p-6 space-y-6">
@@ -124,7 +147,7 @@ const IngredientList = () => {
                   <Button variant="ghost" size="icon" onClick={() => handleEdit(ingredient)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDelete(ingredient.ID)}>
+                  <Button variant="ghost" size="icon" onClick={() => confirmDelete(ingredient)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </TableCell>
@@ -133,11 +156,32 @@ const IngredientList = () => {
           </TableBody>
         </Table>
       </div>
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Ingredient</DialogTitle>
+          </DialogHeader>
+          <p>Are you sure you want to delete <b>{toDelete?.Name}</b>?</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConfirmed}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <IngredientForm
         open={formOpen}
         onClose={() => setFormOpen(false)}
         onSave={handleSave}
         initialData={editing}
+      />
+      <ErrorDialog
+        open={errorDialogOpen}
+        message={errorMessage}
+        onClose={() => setErrorDialogOpen(false)}
       />
     </div>
   );

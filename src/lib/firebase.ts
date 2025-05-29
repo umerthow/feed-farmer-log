@@ -13,13 +13,13 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 // };
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCM0dL7Jky-OOBY5vaO3VSlR8AbYPOdpZg",
-  authDomain: "libela-411302.firebaseapp.com",
-  projectId: "libela-411302",
-  storageBucket: "libela-411302.firebasestorage.app",
-  messagingSenderId: "423911887089",
-  appId: "1:423911887089:web:4d7c42441bc6c4fd785950",
-  measurementId: "G-FBLM4TP9NQ"
+  apiKey:  import.meta.env.VITE_FIRE_BASE_API_KEY as string,
+  authDomain: import.meta.env.VITE_FIRE_BASE_AUTH_DOMAIN as string,
+  projectId: import.meta.env.VITE_FIRE_BASE_PROJECT_ID as string,
+  storageBucket: import.meta.env.VITE_FIRE_BASE_STORAGE_BUCKET as string,
+  messagingSenderId: import.meta.env.VITE_FIRE_BASE_MESSAGING_SENDER_ID as string,
+  appId: import.meta.env.VITE_FIRE_BASE_APP_ID as string,
+  measurementId: import.meta.env.VITE_FIRE_BASE_MESSUREMENT_ID as string
 };
 
 // Initialize Firebase
