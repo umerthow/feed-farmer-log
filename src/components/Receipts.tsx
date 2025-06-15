@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -16,15 +15,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, EyeIcon } from "lucide-react";
 import { UserReceipt } from "@/types/receipt";
 import { useCategoriesAndIngredients } from "@/hooks/useCategoriesAndIngredients";
 import ErrorDialog from "./ui/ErrorDialog";
@@ -33,54 +24,13 @@ import supabase from "@/api/supabase";
 import { useReceipts } from "@/hooks/use-receipts";
 import LoadingSpinner from "./ui/loading-spinner";
 import { useToast } from "@/hooks/use-toast";
-
-// type Receipt = {
-//   id: string;
-//   name: string;
-//   pricePerKg: number;
-//   fedKg: number;
-//   fedPercent: number;
-//   price: number;
-//   ingredients: ReceiptIngredient[];
-// };
-
-// type ReceiptIngredient = {
-//   id: string;
-//   name: string;
-//   quantity: number;
-// };
-
-// const initialReceipts: Partial<UserReceipt>[] = [
-//   {
-//     id: "1",
-//     user_id: "F38jUkFc6lXkttiWQVKVsjEeIFI2",
-//     name: "Dairy Cow Mix",
-//     ingredients: [
-//       {
-//         ingredient_id: 1,
-//         ingredient_category_id: 2,
-//         Name: "Corn",
-//         price_per_kilos: 3200,
-//         kilos: 67,
-//         create_at: new Date(),
-//         update_at: new Date(),
-//       },
-//       {
-//         ingredient_id: 2,
-//         ingredient_category_id: 1,
-//         Name: "Bekatul",
-//         price_per_kilos: 5000,
-//         kilos: 12,
-//         create_at: new Date(),
-//         update_at: new Date(),
-//       },
-//     ],
-//   },
-// ];
+import { useNavigate } from "react-router-dom";
+import ReceiptForm from "@/components/receipts/ReceiptForm";
 
 const Receipts = () => {
   const { categories, ingredients } = useCategoriesAndIngredients();
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
   const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -100,7 +50,7 @@ const Receipts = () => {
   };
 
   // Fetch receipts for the current user
-  const { receipts, setReceipts, loading } = useReceipts(
+  const { receipts, setReceipts, loading, fetchReceipts } = useReceipts(
     currentUser,
     ingredients,
     showError
@@ -112,7 +62,9 @@ const Receipts = () => {
     setCurrentReceipt({
       id: Date.now().toString(),
       user_id: currentUser.uid, // set as needed
+      updated_at:  new Date(),
       receipt_name: "",
+      created_at: new Date(),
       ingredients: [],
     });
     setIsDialogOpen(true);
@@ -128,52 +80,100 @@ const Receipts = () => {
     setIsDialogOpen(true);
   };
 
-
-  const handleSave = async () => {
-    if (!currentReceipt) return;
-    if (receipts.some((r) => r.id === currentReceipt.id)) {
-      setReceipts(
-        receipts.map((r) => (r.id === currentReceipt.id ? currentReceipt : r))
-      );
-    } else {
-      setReceipts([...receipts, currentReceipt]);
-    }
-
-    // Insert to user_receipts
-    const { data: receipt, error } = await supabase
+  const updateReceipt = async (receiptId, updatedReceipt) => {
+    const { error } = await supabase
       .from("user_receipts")
-      .insert([
-        {
-          user_id: currentReceipt.user_id,
-          receipt_name: currentReceipt.receipt_name,
-        },
-      ])
-      .select()
-      .single();
+      .update({
+        receipt_name: updatedReceipt.receipt_name,
+        updated_at: new Date().toISOString(), // Update timestamp
+      })
+      .eq("id", receiptId);
+  
     if (error) {
-      showError("Error add receipt: " + error.message);
+      console.error("Error updating user_receipts:", error.message);
+      return false;
     }
+  
+    return true;
+  };
 
-    // Insert details
-    const details = currentReceipt.ingredients.map((ing) => ({
-      ingredient_id: ing.ingredient_id,
-      price_per_kilos: ing.price_per_kilos,
-      kilos: ing.kilos,
-      ingredient_category_id: ing.ingredient_category_id,
-      user_receipt_id: receipt.id,
-    }));
-    const { error: detailError } = await supabase
+  const updateReceiptDetails = async (receiptId, updatedDetails) => {
+    // Delete existing details for the receipt
+    const { error: deleteError } = await supabase
       .from("user_receipts_detail")
-      .insert(details);
-    if (detailError) return showError(detailError.message);
+      .delete()
+      .eq("user_receipt_id", receiptId);
+  
+    if (deleteError) {
+      console.error("Error deleting user_receipts_detail:", deleteError.message);
+      return false;
+    }
+  
+    // Insert updated details
+    const { error: insertError } = await supabase
+      .from("user_receipts_detail")
+      .insert(
+        updatedDetails.map((detail) => ({
+          ingredient_category_id: detail.ingredient_category_id,
+          user_receipt_id: receiptId,
+          ingredient_id: detail.ingredient_id,
+          kilos: detail.kilos,
+          price_per_kilos: detail.price_per_kilos,
+          updated_at: new Date().toISOString(),
+        }))
+      );
+  
+    if (insertError) {
+      console.error("Error inserting user_receipts_detail:", insertError.message);
+      return false;
+    }
+  
+    return true;
+  };
 
+  const updateReceiptAndDetails = async (receiptId, updatedReceipt, updatedDetails) => {
+    const receiptUpdated = await updateReceipt(receiptId, updatedReceipt);
+    if (!receiptUpdated) return false;
+  
+    const detailsUpdated = await updateReceiptDetails(receiptId, updatedDetails);
+    if (!detailsUpdated) return false;
+  
+    return true;
+  };
+
+
+const handleSave = async () => {
+  const receiptId = currentReceipt.id; // ID of the receipt being updated
+  const updatedReceipt = {
+    receipt_name: currentReceipt.receipt_name,
+  };
+  const updatedDetails = currentReceipt.ingredients.map((ingredient) => ({
+    ingredient_category_id: Number(ingredient.ingredient_category_id), // Include ingredient_category_id
+    ingredient_id: ingredient.ingredient_id,
+    kilos: ingredient.kilos,
+    price_per_kilos: ingredient.price_per_kilos,
+  }));
+
+  const success = await updateReceiptAndDetails(receiptId, updatedReceipt, updatedDetails);
+
+  if (success) {
+    console.log("Receipt and details updated successfully!");
     toast({
       title: 'Success',
-      description: 'You have successfully create new receipt: ' + currentReceipt.receipt_name,
+      description: 'Receipt and details updated successfully',
     });
-
+    await fetchReceipts(); 
     setIsDialogOpen(false);
-  };
+  } else {
+    toast({
+      title: 'Error',
+      description: 'Failed to update receipt',
+      variant: 'destructive',
+    });
+    console.error("Failed to update receipt and details.");
+  }
+};
+
 
   const handleDeleteConfirmed = async () => {
     if (!toDelete) return;
@@ -195,15 +195,28 @@ const Receipts = () => {
     setCurrentReceipt({ ...currentReceipt, [field]: value });
   };
 
-  const handleAddIngredient = () => {
-    setCurrentIngredient({
-      ingredient_id: "",
-      Name: "",
-      price_per_kilos: 0,
-      kilos: 0,
-      create_at: new Date(),
-      update_at: new Date(),
-    });
+  const handleAddIngredient = (ingredient = null) => {
+    console.log('ingredient', ingredient);
+    if (ingredient) {
+      // Pre-fill the form with the selected ingredient's values for editing
+      setCurrentIngredient({
+        ...ingredient,
+        ingredient_category_id: ingredient.ingredient_category_id.toString(), // Ensure it's a string for the Select component
+        ingredient_id: ingredient.ingredient_id.toString(),
+        Name: ingredient.Name
+      });
+    } else {
+      // Reset the form for adding a new ingredient
+      setCurrentIngredient({
+        ingredient_id: "",
+        ingredient_category_id: "",
+        Name: "",
+        price_per_kilos: 0,
+        kilos: 0,
+        create_at: new Date(),
+        update_at: new Date(),
+      });
+    }
     setIsIngredientDialogOpen(true);
   };
 
@@ -214,29 +227,38 @@ const Receipts = () => {
       !currentIngredient.ingredient_category_id ||
       !currentIngredient.ingredient_id
     ) {
-      <ErrorDialog
-        open={errorDialogOpen}
-        message="Data Not Found"
-        onClose={() => setErrorDialogOpen(false)}
-      />;
+      showError("Data Not Found");
       return;
     }
-
-    // Ensure IDs are numbers
-    const ingredientToAdd = {
+  
+    const ingredientToSave = {
       ...currentIngredient,
       ingredient_category_id: Number(currentIngredient.ingredient_category_id),
       ingredient_id: Number(currentIngredient.ingredient_id),
-      create_at: new Date(),
+      create_at: currentIngredient.create_at || new Date(),
       update_at: new Date(),
     };
-
-    setCurrentReceipt({
-      ...currentReceipt,
-      ingredients: [...currentReceipt.ingredients, ingredientToAdd],
-    });
+  
+    // Check if the ingredient already exists in the list
+    const existingIngredientIndex = currentReceipt.ingredients.findIndex(
+      (i) => i.ingredient_id === ingredientToSave.ingredient_id
+    );
+  
+    if (existingIngredientIndex !== -1) {
+      // Update the existing ingredient
+      const updatedIngredients = [...currentReceipt.ingredients];
+      updatedIngredients[existingIngredientIndex] = ingredientToSave;
+      setCurrentReceipt({ ...currentReceipt, ingredients: updatedIngredients });
+    } else {
+      // Add a new ingredient
+      setCurrentReceipt({
+        ...currentReceipt,
+        ingredients: [...currentReceipt.ingredients, ingredientToSave],
+      });
+    }
+  
     setIsIngredientDialogOpen(false);
-    setCurrentIngredient(null); // Reset after adding
+    setCurrentIngredient(null); // Reset after saving
   };
 
   const handleRemoveIngredient = (ingredient_id: number) => {
@@ -266,9 +288,8 @@ const Receipts = () => {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead colSpan={3} className="p-0">
-                Details
-              </TableHead>
+              <TableHead>Created Time</TableHead>
+              <TableHead>Updated Time</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -278,41 +299,33 @@ const Receipts = () => {
                 <TableCell className="font-medium">
                   {receipt.receipt_name}
                 </TableCell>
-                <TableCell colSpan={4} className="p-0">
-                  <Table className="w-full border-none">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Price per kg</TableHead>
-                        <TableHead>Quantity (kg)</TableHead>
-                        <TableHead>Total Price</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {receipt.ingredients.map((ingredient) => (
-                        <TableRow key={ingredient.ingredient_id}>
-                          <TableCell>{ingredient.Name}</TableCell>
-                          <TableCell>
-                            {ingredient.price_per_kilos.toLocaleString(
-                              "id-ID",
-                              { style: "currency", currency: "IDR" }
-                            )}
-                          </TableCell>
-                          <TableCell>{ingredient.kilos}</TableCell>
-                          <TableCell>
-                            {(
-                              ingredient.price_per_kilos * ingredient.kilos
-                            ).toLocaleString("id-ID", {
-                              style: "currency",
-                              currency: "IDR",
-                            })}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                <TableCell className="font-medium">
+                  {new Date(receipt.created_at).toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </TableCell>
+                <TableCell className="font-medium">
+                  {new Date(receipt.updated_at).toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </TableCell>
                 <TableCell className="text-right align-top">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => navigate(`/receipt-nutritions/${receipt.id}`)}
+                    className="ml-2"
+                  >
+                    <EyeIcon className="h-4 w-4" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -334,189 +347,23 @@ const Receipts = () => {
         </Table>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>
-              {currentReceipt &&
-              receipts.some((r) => r.id === currentReceipt.id)
-                ? "Edit Receipt"
-                : "Add New Receipt"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-4">
-            <div className="col-span-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={currentReceipt?.receipt_name || ""}
-                onChange={(e) =>
-                  handleInputChange("receipt_name", e.target.value)
-                }
-              />
-            </div>
-            <div className="col-span-2">
-              <div className="flex justify-between items-center mb-2">
-                <Label>Ingredients</Label>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddIngredient}
-                >
-                  <Plus className="mr-1 h-3 w-3" /> Add
-                </Button>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Price per kg</TableHead>
-                    <TableHead>Quantity (kg)</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {currentReceipt?.ingredients.map((ingredient) => (
-                    <TableRow key={ingredient.ingredient_id}>
-                      <TableCell>{ingredient.Name}</TableCell>
-                      <TableCell>{ingredient.price_per_kilos}</TableCell>
-                      <TableCell>{ingredient.kilos}</TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() =>
-                            handleRemoveIngredient(ingredient.ingredient_id)
-                          }
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={isIngredientDialogOpen}
-        onOpenChange={setIsIngredientDialogOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Ingredient</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div>
-              <Label htmlFor="category">Category</Label>
-              <Select
-                onValueChange={(value) =>
-                  setCurrentIngredient({
-                    ...currentIngredient,
-                    ingredient_category_id: value,
-                    ingredient_id: "", // reset ingredient when category changes
-                  })
-                }
-                value={currentIngredient?.ingredient_category_id || ""}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="ingredient">Ingredient</Label>
-              <Select
-                onValueChange={(value) =>
-                  setCurrentIngredient({
-                    ...currentIngredient,
-                    ingredient_id: value,
-                    Name:
-                      ingredients.find((i) => i.ID === Number(value))?.Name ||
-                      "",
-                  })
-                }
-                value={currentIngredient?.ingredient_id || ""}
-                disabled={!currentIngredient?.ingredient_category_id}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select ingredient" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ingredients.map((ingredient) => (
-                    <SelectItem key={ingredient.ID} value={ingredient.ID}>
-                      {ingredient.Name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="price_per_kilos">Price per kg</Label>
-              <Input
-                id="price_per_kilos"
-                type="number"
-                value={currentIngredient?.price_per_kilos || 0}
-                onChange={(e) =>
-                  setCurrentIngredient({
-                    ...currentIngredient,
-                    price_per_kilos: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="kilos">Quantity (kg)</Label>
-              <Input
-                id="kilos"
-                type="number"
-                value={currentIngredient?.kilos || 0}
-                onChange={(e) =>
-                  setCurrentIngredient({
-                    ...currentIngredient,
-                    kilos: parseFloat(e.target.value) || 0,
-                  })
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsIngredientDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveIngredient}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              Add
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ReceiptForm
+        isDialogOpen={isDialogOpen}
+        setIsDialogOpen={setIsDialogOpen}
+        currentReceipt={currentReceipt}
+        setCurrentReceipt={setCurrentReceipt}
+        receipts={receipts}
+        handleSave={handleSave}
+        handleRemoveIngredient={handleRemoveIngredient}
+        handleAddIngredient={handleAddIngredient}
+        currentIngredient={currentIngredient}
+        setCurrentIngredient={setCurrentIngredient}
+        isIngredientDialogOpen={isIngredientDialogOpen}
+        setIsIngredientDialogOpen={setIsIngredientDialogOpen}
+        categories={categories}
+        ingredients={ingredients}
+        handleSaveIngredient={handleSaveIngredient}
+      />
 
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>

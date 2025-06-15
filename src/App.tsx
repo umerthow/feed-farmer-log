@@ -13,6 +13,7 @@ import Receipts from "./components/Receipts";
 import IngredientMaster from "./components/IngredientMaster";
 import ActivityLog from "./components/ActivityLog";
 import Agents from "./components/Agents";
+import ReceiptDetail from "./components/ReceiptDetail";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/" element={<MainLayout />}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="receipts" element={<Receipts />} />
+            <Route path="/receipt-nutritions/:id" element={<ReceiptDetail/>} />
             <Route path="ingredients" element={<IngredientMaster />} />
             <Route path="activity-log" element={<ActivityLog />} />
             <Route path="agents" element={<Agents />} />

@@ -40,6 +40,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log("Auth state changed:", user); // Debugging
       setCurrentUser(user);
       setLoading(false);
+
+      if (!user) {
+        navigate('/login')
+      }
     });
 
     return unsubscribe;
