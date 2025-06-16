@@ -120,8 +120,8 @@ const Receipts = () => {
 
   const handleAddNew = () => {
     setCurrentReceipt({
-      id: Date.now().toString(),
-      user_id: currentUser.uid, // set as needed
+      id: "", // placeholder, will be ignored for insert
+      user_id: currentUser.uid,
       updated_at: new Date(),
       receipt_name: "",
       created_at: new Date(),
@@ -214,39 +214,88 @@ const Receipts = () => {
     return true;
   };
 
+  // Insert a new receipt
+  const insertReceipt = async (newReceipt, details) => {
+    // Insert into user_receipts
+    const { data: insertedReceipts, error: insertError } = await supabase
+      .from("user_receipts")
+      .insert({
+        user_id: newReceipt.user_id,
+        receipt_name: newReceipt.receipt_name,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select();
+    if (insertError) {
+      console.error("Error inserting user_receipts:", insertError.message);
+      return false;
+    }
+    const insertedReceipt = insertedReceipts?.[0];
+    if (!insertedReceipt) return false;
+    // Insert details
+    const { error: detailsError } = await supabase
+      .from("user_receipts_detail")
+      .insert(
+        details.map((detail) => ({
+          ingredient_category_id: detail.ingredient_category_id,
+          user_receipt_id: insertedReceipt.id,
+          ingredient_id: detail.ingredient_id,
+          kilos: detail.kilos,
+          price_per_kilos: detail.price_per_kilos,
+          updated_at: new Date().toISOString(),
+        }))
+      );
+    if (detailsError) {
+      console.error("Error inserting user_receipts_detail:", detailsError.message);
+      return false;
+    }
+    return true;
+  };
+
   const handleSave = async () => {
-    const receiptId = currentReceipt.id; // ID of the receipt being updated
+    const isEdit = receipts.some((r) => r.id === currentReceipt.id);
     const updatedReceipt = {
       receipt_name: currentReceipt.receipt_name,
+      user_id: currentReceipt.user_id,
     };
     const updatedDetails = currentReceipt.ingredients.map((ingredient) => ({
-      ingredient_category_id: Number(ingredient.ingredient_category_id), // Include ingredient_category_id
+      ingredient_category_id: Number(ingredient.ingredient_category_id),
       ingredient_id: ingredient.ingredient_id,
       kilos: ingredient.kilos,
       price_per_kilos: ingredient.price_per_kilos,
     }));
-
-    const success = await updateReceiptAndDetails(
-      receiptId,
-      updatedReceipt,
-      updatedDetails
-    );
-
+    let success = false;
+    if (isEdit) {
+      success = await updateReceiptAndDetails(
+        currentReceipt.id,
+        updatedReceipt,
+        updatedDetails
+      );
+    } else {
+      success = await insertReceipt(currentReceipt, updatedDetails);
+    }
     if (success) {
-      console.log("Receipt and details updated successfully!");
       toast({
         title: "Success",
-        description: "Receipt and details updated successfully",
+        description: isEdit
+          ? "Receipt and details updated successfully"
+          : "Receipt and details added successfully",
       });
       await fetchReceipts();
       setIsDialogOpen(false);
     } else {
       toast({
         title: "Error",
-        description: "Failed to update receipt",
+        description: isEdit
+          ? "Failed to update receipt"
+          : "Failed to add receipt",
         variant: "destructive",
       });
-      console.error("Failed to update receipt and details.");
+      console.error(
+        isEdit
+          ? "Failed to update receipt and details."
+          : "Failed to add receipt and details."
+      );
     }
   };
 
