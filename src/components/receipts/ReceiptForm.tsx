@@ -34,8 +34,8 @@ const ReceiptForm = ({
   setCurrentReceipt,
   receipts,
   handleSave,
-  handleRemoveIngredient,
   handleAddIngredient,
+  handleRemoveIngredient,
   currentIngredient,
   setCurrentIngredient,
   isIngredientDialogOpen,
@@ -148,7 +148,11 @@ const ReceiptForm = ({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Ingredient</DialogTitle>
+            <DialogTitle>
+              {currentIngredient && currentIngredient.ingredient_id
+                ? "Edit Ingredient"
+                : "Add Ingredient"}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div>
@@ -161,7 +165,8 @@ const ReceiptForm = ({
                     ingredient_id: "", // Reset ingredient when category changes
                   })
                 }
-                value={currentIngredient?.ingredient_category_id || ""} // Auto-select based on current value
+
+                value={currentIngredient?.ingredient_category_id || ""} // This auto-selects the current value
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
@@ -241,7 +246,9 @@ const ReceiptForm = ({
               onClick={handleSaveIngredient}
               className="bg-green-600 hover:bg-green-700"
             >
-              Add
+               {currentIngredient && currentIngredient.ingredient_id
+                ? "Update"
+                : "Add"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -201,8 +201,8 @@ const handleSave = async () => {
       // Pre-fill the form with the selected ingredient's values for editing
       setCurrentIngredient({
         ...ingredient,
-        ingredient_category_id: ingredient.ingredient_category_id.toString(), // Ensure it's a string for the Select component
-        ingredient_id: ingredient.ingredient_id.toString(),
+        ingredient_category_id: ingredient.ingredient_category_id, // Ensure it's a string for the Select component
+        ingredient_id: ingredient.ingredient_id,
         Name: ingredient.Name
       });
     } else {
