@@ -18,6 +18,7 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
+import { PieChart, Pie, Cell } from "recharts";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { DownloadIcon } from "lucide-react";
@@ -56,11 +57,11 @@ const nutrientCols = [
   { key: "Linoleat", label: "Linoleat" },
 ];
 
-const ReceiptsNutritionTable = ({ receipts }) => {
+const ReceiptsNutritionTable = ({ receipts, onEditReceipt }) => {
   const receiptsGrouped = groupByReceiptAndCategory(receipts);
   // Helper to sum nutrition columns and price
   function getTotals(details) {
-    const totals: Record<string, any> = {};
+    const totals = { price: 0, kilos: 0 };
     nutrientCols.forEach((col) => {
       totals[col.key] = details.reduce(
         (sum, d) => sum + (Number(d.ingredient?.[col.key]) || 0),
@@ -71,25 +72,18 @@ const ReceiptsNutritionTable = ({ receipts }) => {
       (sum, d) => sum + (Number(d.price_per_kilos) || 0),
       0
     );
-
     totals.kilos = details.reduce((sum, d) => sum + (Number(d.kilos) || 0), 0);
-
     return totals;
   }
-
   function totalKilosPercentage(perkilos, total) {
     const totalKilos = (perkilos / total) * 100;
-
     if (Number(totalKilos) < 0) {
       return 0;
     }
-
     return (Math.round(totalKilos * 100) / 100).toFixed(2);
   }
-
   // Compute chart data for total value of each header
   const chartData = useMemo(() => {
-    // Just use the first receipt group, or you can adapt for multi-receipt
     if (!receipts?.length) return [];
     const allDetails = receipts[0]?.user_receipts_detail || [];
     const totals = {};
@@ -108,11 +102,48 @@ const ReceiptsNutritionTable = ({ receipts }) => {
     ];
   }, [receipts]);
 
+  // Bar chart data: show each ingredient's kilos for all receipts in the table
+  const barChartData = useMemo(() => {
+    if (!receipts?.length) return [];
+    // Flatten all details from all receipts
+    const allDetails = receipts.flatMap((r) => r.user_receipts_detail || []);
+    // Group by ingredient name and sum kilos
+    const ingredientMap = {};
+    allDetails.forEach((d) => {
+      const name = d.ingredient?.Name || "-";
+      if (!ingredientMap[name]) ingredientMap[name] = 0;
+      ingredientMap[name] += d.price_per_kilos || 0;
+    });
+    return Object.entries(ingredientMap).map(([name, value]) => ({ name, value }));
+  }, [receipts]);
+
+  // Pie chart data: ingredient name and kilos for the first receipt
+  const pieData = useMemo(() => {
+    if (!receipts?.length) return [];
+    const allDetails = receipts[0]?.user_receipts_detail || [];
+    return allDetails.map((d) => ({
+      name: d.ingredient?.Name || "-",
+      value: d.price_per_kilos || 0,
+    }));
+  }, [receipts]);
+  const COLORS = [
+    "#0088FE",
+    "#00C49F",
+    "#FFBB28",
+    "#FF8042",
+    "#A28CFF",
+    "#FF6699",
+    "#FFB347",
+    "#B6D7A8",
+    "#FFD700",
+    "#40E0D0",
+  ];
+
   // XLSX Download handler
   const handleDownload = () => {
     // Prepare data for xlsx
     const tableData = [];
-    let fileName: string = "";
+    let fileName = "";
 
     receiptsGrouped.forEach((receipt) => {
       fileName = receipt.receipt_name;
@@ -168,70 +199,108 @@ const ReceiptsNutritionTable = ({ receipts }) => {
     );
   };
 
+  // Custom Tooltip for PieChart to show percentage
+  const PieChartTooltip = ({ active, payload, barChartData }) => {
+    console.log('barChartData',barChartData);
+    const totalSum = barChartData.reduce((sum, d) => sum + (d.value || 0), 0)
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      // Find the total for percentage calculation
+      const total = barChartData.reduce((sum, d) => sum + (d.value || 0), 0);
+      const percent = total > 0 ? ((data.value / totalSum) * 100).toFixed(2) : "0.00";
+      return (
+        <div style={{ background: '#fff', border: '1px solid #ccc', padding: 8, borderRadius: 4 }}>
+          <div><b>{data.name}</b></div>
+          <div>Harga: {data.value.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}</div>
+          <div>Persentase: {percent}%</div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div>
-      <div style={{ overflowX: "auto" }}>
-        <Table>
-          <TableHeader style={{ textAlign: "center" }}>
-            <TableRow>
-              <TableHead
-                rowSpan={2}
-                className="sticky-col"
-                style={{
-                  minWidth: 180,
-                  position: "sticky",
-                  left: 0,
-                  zIndex: 2,
-                  background: "#fff",
-                }}
+      {receiptsGrouped.map((receipt, idx) => (
+        <React.Fragment key={receipt.receipt_name}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              margin: "16px 0",
+            }}
+          >
+            <h2 className="text-xl font-bold">{receipt.receipt_name}</h2>
+            {onEditReceipt && (
+              <button
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold"
+                onClick={() => onEditReceipt(receipts[idx])}
               >
-                Bahan Baku
-              </TableHead>
-              <TableHead colSpan={nutrientCols.length}>
-                Kandungan Nutrisi Bahan Baku
-              </TableHead>
-              <TableHead
-                align="center"
-                style={{
-                  width: "120px",
-                  minWidth: "120px",
-                  fontWeight: "bold",
-                }}
-              >
-                Berat (Kg)
-              </TableHead>
-              <TableHead
-                align="center"
-                style={{
-                  width: "150px",
-                  minWidth: "150px",
-                  textAlign: "center",
-                  fontWeight: "bold",
-                }}
-              >
-                Harga Perkilo
-              </TableHead>
-              <TableHead
-                align="center"
-                style={{
-                  width: "170px",
-                  minWidth: "170px",
-                  textAlign: "center",
-                  fontWeight: "bold",
-                }}
-              >
-                % Hasil Formulasi
-              </TableHead>
-            </TableRow>
-            <TableRow>
-              {nutrientCols.map((col) => (
-                <TableHead key={col.key}>{col.label}</TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {receiptsGrouped.map((receipt) => (
-              <React.Fragment key={receipt.receipt_name}>
+                Edit Receipt
+              </button>
+            )}
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <Table>
+              <TableHeader style={{ textAlign: "center" }}>
+                <TableRow>
+                  <TableHead
+                    rowSpan={2}
+                    className="sticky-col"
+                    style={{
+                      minWidth: 180,
+                      position: "sticky",
+                      left: 0,
+                      zIndex: 2,
+                      background: "#fff",
+                    }}
+                  >
+                    Bahan Baku
+                  </TableHead>
+                  <TableHead colSpan={nutrientCols.length}>
+                    Kandungan Nutrisi Bahan Baku
+                  </TableHead>
+                  <TableHead
+                    align="center"
+                    style={{
+                      width: "120px",
+                      minWidth: "120px",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    Berat (Kg)
+                  </TableHead>
+                  <TableHead
+                    align="center"
+                    style={{
+                      width: "150px",
+                      minWidth: "150px",
+                      textAlign: "center",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    Harga Perkilo
+                  </TableHead>
+                  <TableHead
+                    align="center"
+                    style={{
+                      width: "170px",
+                      minWidth: "170px",
+                      textAlign: "center",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    % Hasil Formulasi
+                  </TableHead>
+                </TableRow>
+                <TableRow>
+                  {nutrientCols.map((col) => (
+                    <TableHead key={col.key}>{col.label}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {Object.entries(receipt.groupedDetails).map(
                   ([category, details]) => (
                     <React.Fragment key={category}>
@@ -280,7 +349,6 @@ const ReceiptsNutritionTable = ({ receipts }) => {
                               minimumFractionDigits: 2,
                             }) || "-"}
                           </TableCell>
-                          {}
                           <TableCell align="center">
                             {totalKilosPercentage(
                               detail.kilos,
@@ -336,33 +404,41 @@ const ReceiptsNutritionTable = ({ receipts }) => {
                     1.000
                   </TableCell>
                 </TableRow>
-              </React.Fragment>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
+              </TableBody>
+            </Table>
+          </div>
+        </React.Fragment>
+      ))}
       {/* Chart + Button Section */}
       <div className="flex flex-col md:flex-row justify-between items-start mt-8 gap-8">
-        {/* Chart */}
-        <div className="w-full md:w-2/3 p-4 bg-white rounded-2xl shadow-lg hidden">
-          <h2 className="text-xl font-semibold mb-4">Diagram Total Nutrisi</h2>
+        {/* Pie Chart */}
+        <div className="w-full md:w-2/3 p-4 bg-white rounded-2xl shadow-lg">
+          <h2 className="text-xl font-semibold mb-4">Komposisi Harga Per (Kg)</h2>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart
-              data={Object.keys(chartData[0] || {})
-                .filter((k) => k !== "name")
-                .map((k) => ({
-                  name: k,
-                  value: chartData[0][k],
-                }))}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
+            <PieChart>
+              <Pie
+                data={barChartData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius={100}
+                fill="#8884d8"
+                label={({ name, value }) =>
+                  `${name}: ${value.toLocaleString("id-ID", {
+                    style: "currency",
+                    currency: "IDR",
+                    minimumFractionDigits: 0,
+                  })}`
+                }
+              >
+                {barChartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip content={<PieChartTooltip barChartData={barChartData} active={null} payload={null} />} />
               <Legend />
-              <Bar dataKey="value" name="Total" fill="#0ea5e9" />
-            </BarChart>
+            </PieChart>
           </ResponsiveContainer>
         </div>
         {/* Download Button */}

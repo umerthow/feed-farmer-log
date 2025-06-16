@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -26,6 +26,19 @@ import LoadingSpinner from "./ui/loading-spinner";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import ReceiptForm from "@/components/receipts/ReceiptForm";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
 const Receipts = () => {
   const { categories, ingredients } = useCategoriesAndIngredients();
@@ -74,6 +87,34 @@ const Receipts = () => {
     const total = getTotals(receipts[0]?.ingredients);
     console.log(total);
   }
+
+  // Bar chart data: show each ingredient's kilos for all receipts in the table
+  const barChartData = useMemo(() => {
+    if (!receipts?.length) return [];
+    const ingredientMap = {};
+
+    receipts.forEach((d) => {
+       const name = d.receipt_name || "-";
+       if (!ingredientMap[name]) ingredientMap[name] = 0;
+       ingredientMap[name] += getTotals(d.ingredients).price
+    })
+    return Object.entries(ingredientMap).map(([name, value]) => ({
+      name,
+      value,
+    }));
+  }, [receipts]);
+  const COLORS = [
+    "#0088FE",
+    "#00C49F",
+    "#FFBB28",
+    "#FF8042",
+    "#A28CFF",
+    "#FF6699",
+    "#FFB347",
+    "#B6D7A8",
+    "#FFD700",
+    "#40E0D0",
+  ];
 
   if (loading) return <LoadingSpinner message="Loading receipts..." />;
 
@@ -234,13 +275,14 @@ const Receipts = () => {
       // Pre-fill the form with the selected ingredient's values for editing
       setCurrentIngredient({
         ...ingredient,
-        ingredient_category_id: ingredient.ingredient_category_id, // Ensure it's a string for the Select component
+        ingredient_category_id: ingredient.ingredient_category_id,
         ingredient_id: ingredient.ingredient_id,
         Name: ingredient.Name,
       });
     } else {
       // Reset the form for adding a new ingredient
       setCurrentIngredient({
+        addMode: true,
         ingredient_id: "",
         ingredient_category_id: "",
         Name: "",
@@ -263,7 +305,6 @@ const Receipts = () => {
       showError("Data Not Found");
       return;
     }
-
     const ingredientToSave = {
       ...currentIngredient,
       ingredient_category_id: Number(currentIngredient.ingredient_category_id),
@@ -271,12 +312,10 @@ const Receipts = () => {
       create_at: currentIngredient.create_at || new Date(),
       update_at: new Date(),
     };
-
     // Check if the ingredient already exists in the list
     const existingIngredientIndex = currentReceipt.ingredients.findIndex(
       (i) => i.ingredient_id === ingredientToSave.ingredient_id
     );
-
     if (existingIngredientIndex !== -1) {
       // Update the existing ingredient
       const updatedIngredients = [...currentReceipt.ingredients];
@@ -289,7 +328,6 @@ const Receipts = () => {
         ingredients: [...currentReceipt.ingredients, ingredientToSave],
       });
     }
-
     setIsIngredientDialogOpen(false);
     setCurrentIngredient(null); // Reset after saving
   };
@@ -315,79 +353,117 @@ const Receipts = () => {
           <Plus className="mr-2 h-4 w-4" /> Add Receipt
         </Button>
       </div>
-
       <div className="border rounded-md">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Created Time</TableHead>
-              <TableHead>Updated Time</TableHead>
-              <TableHead>Total Harga</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {receipts.map((receipt) => (
-              <TableRow key={receipt.id}>
-                <TableCell className="font-medium">
-                  {receipt.receipt_name}
-                </TableCell>
-                <TableCell className="font-medium">
-                  {new Date(receipt.created_at).toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </TableCell>
-                <TableCell className="font-medium">
-                  {new Date(receipt.updated_at).toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </TableCell>
-                <TableCell className="font-medium">
-                  {" "}
-                  Rp {getTotals(receipt.ingredients).price?.toLocaleString(
-                    "id-ID",
-                    { minimumFractionDigits: 2 }
-                  )}
-                </TableCell>
-                <TableCell className="text-right align-top">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() =>
-                      navigate(`/receipt-nutritions/${receipt.id}`)
-                    }
-                    className="ml-2"
-                  >
-                    <EyeIcon className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleEdit(receipt)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => confirmDelete(receipt)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Created Time</TableHead>
+                <TableHead>Updated Time</TableHead>
+                <TableHead>Total Harga</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {receipts.map((receipt) => (
+                <TableRow key={receipt.id}>
+                  <TableCell className="font-medium">
+                    {receipt.receipt_name}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {new Date(receipt.created_at).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {new Date(receipt.updated_at).toLocaleDateString("en-US", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {" "}
+                    Rp{" "}
+                    {getTotals(receipt.ingredients).price?.toLocaleString(
+                      "id-ID",
+                      { minimumFractionDigits: 2 }
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right align-top">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        navigate(`/receipt-nutritions/${receipt.id}`)
+                      }
+                      className="ml-2"
+                    >
+                      <EyeIcon className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleEdit(receipt)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => confirmDelete(receipt)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      {/* Bar & Pie Chart Section */}
+      <div className="flex flex-col md:flex-row justify-between items-start mt-8 gap-8">
+        {/* Bar Chart */}
+        <div className="w-full md:w-full p-4 bg-white rounded-2xl shadow-lg">
+          <h2 className="text-xl font-semibold mb-4">
+            Diagram Komposisi Harga Resep
+          </h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={barChartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis
+                tickFormatter={(value) =>
+                  value.toLocaleString("id-ID", {
+                    style: "currency",
+                    currency: "IDR",
+                    minimumFractionDigits: 0,
+                  })
+                }
+              />
+              <Tooltip
+                formatter={(value) =>
+                  value.toLocaleString("id-ID", {
+                    style: "currency",
+                    currency: "IDR",
+                    minimumFractionDigits: 0,
+                  })
+                }
+              />
+              <Legend />
+              <Bar dataKey="value" name="Total (Rp)" fill="#0ea5e9" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       <ReceiptForm
@@ -407,7 +483,6 @@ const Receipts = () => {
         ingredients={ingredients}
         handleSaveIngredient={handleSaveIngredient}
       />
-
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>

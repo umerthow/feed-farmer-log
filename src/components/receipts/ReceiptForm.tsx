@@ -99,7 +99,11 @@ const ReceiptForm = ({
                     <TableRow key={ingredient.ingredient_id}>
                       <TableCell>{ingredient.Name}</TableCell>
                       <TableCell>
-                        {ingredient.ingredient_category.name}
+                        {ingredient.ingredient_category?.name ||
+                          categories.find((cat) =>
+                            cat.id === Number(ingredient.ingredient_category_id)
+                          )?.name ||
+                          "-"}
                       </TableCell>
                       <TableCell>{ingredient.kilos}</TableCell>
                       <TableCell>{ingredient.price_per_kilos}</TableCell>
@@ -149,7 +153,7 @@ const ReceiptForm = ({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {currentIngredient && currentIngredient.ingredient_id
+              {currentIngredient && !currentIngredient.addMode
                 ? "Edit Ingredient"
                 : "Add Ingredient"}
             </DialogTitle>
@@ -159,13 +163,16 @@ const ReceiptForm = ({
               <Label htmlFor="category">Category</Label>
               <Select
                 onValueChange={(value) =>
-                  setCurrentIngredient({
-                    ...currentIngredient,
-                    ingredient_category_id: value,
-                    ingredient_id: "", // Reset ingredient when category changes
+                  setCurrentIngredient((prev) => {
+                    // Only reset ingredient_id if not editing (i.e., no ingredient_id set yet)
+                    const shouldReset = !prev.ingredient_id;
+                    return {
+                      ...prev,
+                      ingredient_category_id: value,
+                      ingredient_id: shouldReset ? "" : prev.ingredient_id,
+                    };
                   })
                 }
-
                 value={currentIngredient?.ingredient_category_id || ""} // This auto-selects the current value
               >
                 <SelectTrigger>
@@ -187,7 +194,8 @@ const ReceiptForm = ({
                   setCurrentIngredient({
                     ...currentIngredient,
                     ingredient_id: value,
-                    Name: ingredients.find((i) => i.ID === Number(value))?.Name ||
+                    Name:
+                      ingredients.find((i) => i.ID === Number(value))?.Name ||
                       "",
                   })
                 }
@@ -246,7 +254,7 @@ const ReceiptForm = ({
               onClick={handleSaveIngredient}
               className="bg-green-600 hover:bg-green-700"
             >
-               {currentIngredient && currentIngredient.ingredient_id
+              {currentIngredient && !currentIngredient.addMode
                 ? "Update"
                 : "Add"}
             </Button>
