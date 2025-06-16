@@ -43,6 +43,19 @@ const Receipts = () => {
   const [currentIngredient, setCurrentIngredient] = useState<any>(null);
   const [isIngredientDialogOpen, setIsIngredientDialogOpen] = useState(false);
 
+  function getTotals(details) {
+    const totals: Record<string, any> = {};
+
+    totals.price = details.reduce(
+      (sum, d) => sum + (Number(d.price_per_kilos) || 0),
+      0
+    );
+
+    totals.kilos = details.reduce((sum, d) => sum + (Number(d.kilos) || 0), 0);
+
+    return totals;
+  }
+
   // Helper to show error
   const showError = (msg: string) => {
     setErrorMessage(msg);
@@ -56,13 +69,19 @@ const Receipts = () => {
     showError
   );
 
+  console.log("receipts", receipts);
+  if (receipts.length > 0) {
+    const total = getTotals(receipts[0]?.ingredients);
+    console.log(total);
+  }
+
   if (loading) return <LoadingSpinner message="Loading receipts..." />;
 
   const handleAddNew = () => {
     setCurrentReceipt({
       id: Date.now().toString(),
       user_id: currentUser.uid, // set as needed
-      updated_at:  new Date(),
+      updated_at: new Date(),
       receipt_name: "",
       created_at: new Date(),
       ingredients: [],
@@ -88,12 +107,12 @@ const Receipts = () => {
         updated_at: new Date().toISOString(), // Update timestamp
       })
       .eq("id", receiptId);
-  
+
     if (error) {
       console.error("Error updating user_receipts:", error.message);
       return false;
     }
-  
+
     return true;
   };
 
@@ -103,12 +122,15 @@ const Receipts = () => {
       .from("user_receipts_detail")
       .delete()
       .eq("user_receipt_id", receiptId);
-  
+
     if (deleteError) {
-      console.error("Error deleting user_receipts_detail:", deleteError.message);
+      console.error(
+        "Error deleting user_receipts_detail:",
+        deleteError.message
+      );
       return false;
     }
-  
+
     // Insert updated details
     const { error: insertError } = await supabase
       .from("user_receipts_detail")
@@ -122,58 +144,70 @@ const Receipts = () => {
           updated_at: new Date().toISOString(),
         }))
       );
-  
+
     if (insertError) {
-      console.error("Error inserting user_receipts_detail:", insertError.message);
+      console.error(
+        "Error inserting user_receipts_detail:",
+        insertError.message
+      );
       return false;
     }
-  
+
     return true;
   };
 
-  const updateReceiptAndDetails = async (receiptId, updatedReceipt, updatedDetails) => {
+  const updateReceiptAndDetails = async (
+    receiptId,
+    updatedReceipt,
+    updatedDetails
+  ) => {
     const receiptUpdated = await updateReceipt(receiptId, updatedReceipt);
     if (!receiptUpdated) return false;
-  
-    const detailsUpdated = await updateReceiptDetails(receiptId, updatedDetails);
+
+    const detailsUpdated = await updateReceiptDetails(
+      receiptId,
+      updatedDetails
+    );
     if (!detailsUpdated) return false;
-  
+
     return true;
   };
 
+  const handleSave = async () => {
+    const receiptId = currentReceipt.id; // ID of the receipt being updated
+    const updatedReceipt = {
+      receipt_name: currentReceipt.receipt_name,
+    };
+    const updatedDetails = currentReceipt.ingredients.map((ingredient) => ({
+      ingredient_category_id: Number(ingredient.ingredient_category_id), // Include ingredient_category_id
+      ingredient_id: ingredient.ingredient_id,
+      kilos: ingredient.kilos,
+      price_per_kilos: ingredient.price_per_kilos,
+    }));
 
-const handleSave = async () => {
-  const receiptId = currentReceipt.id; // ID of the receipt being updated
-  const updatedReceipt = {
-    receipt_name: currentReceipt.receipt_name,
+    const success = await updateReceiptAndDetails(
+      receiptId,
+      updatedReceipt,
+      updatedDetails
+    );
+
+    if (success) {
+      console.log("Receipt and details updated successfully!");
+      toast({
+        title: "Success",
+        description: "Receipt and details updated successfully",
+      });
+      await fetchReceipts();
+      setIsDialogOpen(false);
+    } else {
+      toast({
+        title: "Error",
+        description: "Failed to update receipt",
+        variant: "destructive",
+      });
+      console.error("Failed to update receipt and details.");
+    }
   };
-  const updatedDetails = currentReceipt.ingredients.map((ingredient) => ({
-    ingredient_category_id: Number(ingredient.ingredient_category_id), // Include ingredient_category_id
-    ingredient_id: ingredient.ingredient_id,
-    kilos: ingredient.kilos,
-    price_per_kilos: ingredient.price_per_kilos,
-  }));
-
-  const success = await updateReceiptAndDetails(receiptId, updatedReceipt, updatedDetails);
-
-  if (success) {
-    console.log("Receipt and details updated successfully!");
-    toast({
-      title: 'Success',
-      description: 'Receipt and details updated successfully',
-    });
-    await fetchReceipts(); 
-    setIsDialogOpen(false);
-  } else {
-    toast({
-      title: 'Error',
-      description: 'Failed to update receipt',
-      variant: 'destructive',
-    });
-    console.error("Failed to update receipt and details.");
-  }
-};
-
 
   const handleDeleteConfirmed = async () => {
     if (!toDelete) return;
@@ -196,14 +230,13 @@ const handleSave = async () => {
   };
 
   const handleAddIngredient = (ingredient = null) => {
-    console.log('ingredient', ingredient);
     if (ingredient) {
       // Pre-fill the form with the selected ingredient's values for editing
       setCurrentIngredient({
         ...ingredient,
         ingredient_category_id: ingredient.ingredient_category_id, // Ensure it's a string for the Select component
         ingredient_id: ingredient.ingredient_id,
-        Name: ingredient.Name
+        Name: ingredient.Name,
       });
     } else {
       // Reset the form for adding a new ingredient
@@ -230,7 +263,7 @@ const handleSave = async () => {
       showError("Data Not Found");
       return;
     }
-  
+
     const ingredientToSave = {
       ...currentIngredient,
       ingredient_category_id: Number(currentIngredient.ingredient_category_id),
@@ -238,12 +271,12 @@ const handleSave = async () => {
       create_at: currentIngredient.create_at || new Date(),
       update_at: new Date(),
     };
-  
+
     // Check if the ingredient already exists in the list
     const existingIngredientIndex = currentReceipt.ingredients.findIndex(
       (i) => i.ingredient_id === ingredientToSave.ingredient_id
     );
-  
+
     if (existingIngredientIndex !== -1) {
       // Update the existing ingredient
       const updatedIngredients = [...currentReceipt.ingredients];
@@ -256,7 +289,7 @@ const handleSave = async () => {
         ingredients: [...currentReceipt.ingredients, ingredientToSave],
       });
     }
-  
+
     setIsIngredientDialogOpen(false);
     setCurrentIngredient(null); // Reset after saving
   };
@@ -290,6 +323,7 @@ const handleSave = async () => {
               <TableHead>Name</TableHead>
               <TableHead>Created Time</TableHead>
               <TableHead>Updated Time</TableHead>
+              <TableHead>Total Harga</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -317,11 +351,20 @@ const handleSave = async () => {
                     minute: "2-digit",
                   })}
                 </TableCell>
+                <TableCell className="font-medium">
+                  {" "}
+                  Rp {getTotals(receipt.ingredients).price?.toLocaleString(
+                    "id-ID",
+                    { minimumFractionDigits: 2 }
+                  )}
+                </TableCell>
                 <TableCell className="text-right align-top">
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => navigate(`/receipt-nutritions/${receipt.id}`)}
+                    onClick={() =>
+                      navigate(`/receipt-nutritions/${receipt.id}`)
+                    }
                     className="ml-2"
                   >
                     <EyeIcon className="h-4 w-4" />
